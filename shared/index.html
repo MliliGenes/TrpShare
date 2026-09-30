@@ -1,0 +1,650 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
+    <title>Game Chat</title>
+
+    <style>
+        * {
+            box-sizing: border-box;
+        }
+
+        body {
+            margin: 0;
+            min-height: 100vh;
+            font-family: "Courier New", monospace;
+
+            /* temporary game-like background */
+            background:
+                radial-gradient(circle at center, #171a24, #08090d 70%);
+
+            color: #e6e6ef;
+        }
+
+        /* ==============================
+           CHAT CARD
+        ============================== */
+
+        .chat {
+            position: fixed;
+            left: 28px;
+            bottom: 32px;
+
+            width: 440px;
+            height: 350px;
+
+            display: flex;
+            flex-direction: column;
+
+            padding: 18px 16px 16px;
+
+            background:
+                linear-gradient(135deg,
+                    rgba(19, 21, 34, 0.94),
+                    rgba(11, 12, 20, 0.96));
+
+            border: 1px solid #4d4f7d;
+            border-radius: 22px;
+
+            box-shadow:
+                0 10px 40px rgba(0, 0, 0, 0.4),
+                0 0 20px rgba(93, 92, 180, 0.12);
+        }
+
+        /* ==============================
+           HEADER
+        ============================== */
+
+        .header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+
+            padding: 0 8px 12px;
+
+            font-size: 12px;
+        }
+
+        #status {
+            color: #83859a;
+        }
+
+        #channel {
+            color: #67c7ff;
+            font-weight: bold;
+            letter-spacing: 0.5px;
+        }
+
+        /* ==============================
+           MESSAGES
+        ============================== */
+
+        .messages {
+            flex: 1;
+
+            padding: 5px 10px;
+
+            overflow-y: auto;
+            scrollbar-width: none;
+        }
+
+        .messages::-webkit-scrollbar {
+            display: none;
+        }
+
+        .message {
+            margin-bottom: 11px;
+
+            font-size: 15px;
+            line-height: 1.25;
+
+            word-break: break-word;
+        }
+
+        .message .scope {
+            font-weight: bold;
+        }
+
+        /*
+          Party = blue
+        */
+
+        .message[data-scope="party"] .scope,
+        .message[data-scope="party"] .username {
+            color: #67c7ff;
+        }
+
+        /*
+          All = pink/red
+        */
+
+        .message[data-scope="all"] .scope,
+        .message[data-scope="all"] .username {
+            color: #ff6f91;
+        }
+
+        .message .content {
+            color: #d9d9e2;
+        }
+
+        /* ==============================
+           INPUT
+        ============================== */
+
+        .input-container {
+            height: 52px;
+
+            display: flex;
+            align-items: center;
+
+            margin-top: 10px;
+
+            background: rgba(20, 22, 36, 0.85);
+
+            border: 1px solid #555785;
+            border-radius: 18px;
+
+            overflow: hidden;
+
+            transition:
+                border-color 150ms ease,
+                box-shadow 150ms ease;
+        }
+
+        .input-container:focus-within {
+            border-color: #7779d4;
+
+            box-shadow:
+                0 0 14px rgba(103, 105, 220, 0.18);
+        }
+
+        #message {
+            flex: 1;
+
+            height: 100%;
+
+            padding: 0 16px;
+
+            border: none;
+            outline: none;
+
+            background: transparent;
+
+            color: #eeeef4;
+
+            font-family: inherit;
+            font-size: 14px;
+        }
+
+        #message::placeholder {
+            color: #747687;
+        }
+
+        #send {
+            width: 48px;
+            height: 48px;
+
+            margin-right: 2px;
+
+            border: none;
+            border-radius: 50%;
+
+            background: transparent;
+
+            color: #7779ff;
+
+            font-size: 21px;
+
+            cursor: pointer;
+
+            transition:
+                background 150ms ease,
+                color 150ms ease;
+        }
+
+        #send:hover {
+            background: rgba(105, 106, 255, 0.12);
+            color: #999aff;
+        }
+
+        /* ==============================
+           TEMP LOGIN
+        ============================== */
+
+        .login {
+            position: fixed;
+
+            left: 28px;
+            bottom: 400px;
+
+            display: flex;
+            gap: 6px;
+        }
+
+        .login input,
+        .login select,
+        .login button {
+            padding: 8px 10px;
+
+            font-family: inherit;
+
+            color: #ddd;
+
+            background: #11131d;
+
+            border: 1px solid #3e405b;
+            border-radius: 7px;
+        }
+
+        .login button {
+            cursor: pointer;
+        }
+
+        /* ==============================
+           SHORTCUT HINT
+        ============================== */
+
+        .shortcuts {
+            position: fixed;
+
+            left: 35px;
+            bottom: 10px;
+
+            font-size: 10px;
+            color: #626474;
+        }
+    </style>
+</head>
+
+
+<body>
+
+
+    <!-- temporary login until we have real game auth -->
+
+    <div class="login">
+
+        <input id="username" placeholder="Username" />
+
+        <select id="team">
+            <option value="red">RED</option>
+            <option value="blue">BLUE</option>
+        </select>
+
+        <button id="connect">
+            CONNECT
+        </button>
+
+    </div>
+
+
+
+    <div class="chat">
+
+        <div class="header">
+
+            <div id="status">
+                OFFLINE
+            </div>
+
+            <div id="channel">
+                PARTY
+            </div>
+
+        </div>
+
+
+        <div id="messages" class="messages"></div>
+
+
+        <div class="input-container">
+
+            <input id="message" autocomplete="off" placeholder="Type a message..." />
+
+            <button id="send">
+                ➤
+            </button>
+
+        </div>
+
+    </div>
+
+
+    <div class="shortcuts">
+        ENTER CHAT · TAB SWITCH CHANNEL · ESC CLOSE
+    </div>
+
+
+
+    <script>
+
+        let socket = null;
+        let currentUser = null;
+
+
+        // Default channel
+
+        let currentScope = "party";
+
+
+
+        const usernameInput =
+            document.getElementById("username");
+
+        const teamInput =
+            document.getElementById("team");
+
+        const connectButton =
+            document.getElementById("connect");
+
+        const status =
+            document.getElementById("status");
+
+        const channelIndicator =
+            document.getElementById("channel");
+
+        const messages =
+            document.getElementById("messages");
+
+        const messageInput =
+            document.getElementById("message");
+
+        const sendButton =
+            document.getElementById("send");
+
+
+
+        // =====================================
+        // CONNECTION
+        // =====================================
+
+        connectButton.addEventListener("click", () => {
+
+            const username =
+                usernameInput.value.trim();
+
+            const channel =
+                teamInput.value;
+
+
+            if (!username)
+                return;
+
+
+            socket =
+                new WebSocket("ws://localhost:8080");
+
+
+
+            socket.addEventListener("open", () => {
+
+                socket.send(
+                    JSON.stringify({
+                        type: "join",
+                        username,
+                        channel
+                    })
+                );
+
+            });
+
+
+
+            socket.addEventListener(
+                "message",
+                (event) => {
+
+                    const payload =
+                        JSON.parse(event.data);
+
+
+                    if (payload.type === "joined") {
+
+                        currentUser =
+                            payload.user;
+
+                        status.textContent =
+                            `${currentUser.username} · ${currentUser.channel}`;
+
+                        return;
+                    }
+
+
+                    if (payload.type === "message") {
+
+                        addMessage(
+                            payload.scope,
+                            payload.from.username,
+                            payload.content
+                        );
+
+                    }
+
+                }
+            );
+
+
+
+            socket.addEventListener(
+                "close",
+                () => {
+
+                    status.textContent =
+                        "OFFLINE";
+
+                    currentUser = null;
+
+                }
+            );
+
+        });
+
+
+
+        // =====================================
+        // SEND MESSAGE
+        // =====================================
+
+        function sendMessage() {
+
+            if (
+                !socket ||
+                socket.readyState !== WebSocket.OPEN ||
+                !currentUser
+            )
+                return;
+
+
+            const content =
+                messageInput.value.trim();
+
+
+            if (!content)
+                return;
+
+
+
+            socket.send(
+                JSON.stringify({
+                    type: "message",
+                    scope: currentScope,
+                    content
+                })
+            );
+
+
+
+            // local optimistic render
+
+            addMessage(
+                currentScope,
+                currentUser.username,
+                content
+            );
+
+
+            messageInput.value = "";
+
+        }
+
+
+
+        sendButton.addEventListener(
+            "click",
+            sendMessage
+        );
+
+
+
+        // =====================================
+        // KEYBOARD CONTROLS
+        // =====================================
+
+        document.addEventListener(
+            "keydown",
+            (event) => {
+
+                /*
+                 * ENTER
+                 *
+                 * If we're not typing,
+                 * focus the chat.
+                 */
+
+                if (
+                    event.key === "Enter" &&
+                    document.activeElement !== messageInput
+                ) {
+
+                    event.preventDefault();
+
+                    messageInput.focus();
+
+                    return;
+                }
+
+
+                /*
+                 * ENTER
+                 *
+                 * While typing -> send.
+                 */
+
+                if (
+                    event.key === "Enter" &&
+                    document.activeElement === messageInput
+                ) {
+
+                    event.preventDefault();
+
+                    sendMessage();
+
+                    return;
+                }
+
+
+                /*
+                 * TAB
+                 *
+                 * Switch PARTY <-> ALL
+                 */
+
+                if (
+                    event.key === "Tab" &&
+                    document.activeElement === messageInput
+                ) {
+
+                    event.preventDefault();
+
+                    toggleScope();
+
+                    return;
+                }
+
+
+                /*
+                 * ESC
+                 *
+                 * Leave chat input.
+                 */
+
+                if (
+                    event.key === "Escape" &&
+                    document.activeElement === messageInput
+                ) {
+
+                    messageInput.blur();
+
+                }
+
+            }
+        );
+
+
+
+        // =====================================
+        // CHANNEL SWITCHING
+        // =====================================
+
+        function toggleScope() {
+
+            currentScope =
+                currentScope === "party"
+                    ? "all"
+                    : "party";
+
+
+            channelIndicator.textContent =
+                currentScope.toUpperCase();
+
+
+            messageInput.placeholder =
+                currentScope === "party"
+                    ? "Message your party..."
+                    : "Message everyone...";
+
+        }
+
+
+
+        // =====================================
+        // DISPLAY MESSAGE
+        // =====================================
+
+        function addMessage(scope, username, content) {
+            const element = document.createElement("div");
+
+            element.className = "message";
+            element.dataset.scope = scope;
+
+            const scopeElement = document.createElement("span");
+            scopeElement.className = "scope";
+            scopeElement.textContent = `(${scope}) `;
+
+            const usernameElement = document.createElement("span");
+            usernameElement.className = "username";
+            usernameElement.textContent = `${username}: `;
+
+            const contentElement = document.createElement("span");
+            contentElement.className = "content";
+            contentElement.textContent = content;
+
+            element.append(
+                scopeElement,
+                usernameElement,
+                contentElement
+            );
+
+            messages.appendChild(element);
+
+            messages.scrollTop = messages.scrollHeight;
+        }
+
+    </script>
+
+</body>
+
+</html>
