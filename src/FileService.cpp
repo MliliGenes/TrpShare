@@ -148,7 +148,7 @@ void FileService::download(int clientFd, const std::string &relativePath) const 
     }
 }
 
-void FileService::upload(int clientFd, const HttpRequest &request) const {
+void FileService::beginUpload(int clientFd, const HttpRequest &request) {
     const std::string name = queryValue(request.target, "name");
     const std::string folder = queryValue(request.target, "path");
     if (!safeName(name) || (!folder.empty() &&
@@ -156,67 +156,28 @@ void FileService::upload(int clientFd, const HttpRequest &request) const {
         sendError(clientFd, 400, "Bad Request", "invalid upload path or filename");
         return;
     }
-
     const fs::path directory = folder.empty() ? root_ : root_ / fs::path(folder);
-    const fs::path destination = directory / name;
-    const fs::path temporary = directory / ("." + name + ".uploading");
-    std::ofstream output(temporary, std::ios::binary | std::ios::trunc);
-    if (!output) {
-        sendError(clientFd, 500, "Internal Server Error", "could not create upload");
-        return;
-    }
-
-    std::uint64_t received = request.body.size();
-    if (!request.body.empty())
-        output.write(request.body.data(), static_cast<std::streamsize>(request.body.size()));
-    char buffer[65536];
-    while (received < request.contentLength && output) {
-        const std::size_t want = static_cast<std::size_t>(std::min<std::uint64_t>(
-            sizeof buffer, request.contentLength - received));
-        const ssize_t bytes = recv(clientFd, buffer, want, 0);
-        if (bytes < 0 && errno == EINTR) continue;
-        if (bytes <= 0) break;
-        output.write(buffer, bytes);
-        received += static_cast<std::uint64_t>(bytes);
-    }
-    output.close();
-    if (received != request.contentLength || !output) {
-        std::error_code error;
-        fs::remove(temporary, error);
-        sendError(clientFd, 400, "Bad Request", "incomplete or failed upload");
-        return;
-    }
-
-    std::error_code error;
-    fs::rename(temporary, destination, error);
-    if (error) {
-        fs::remove(destination, error);
-        error.clear();
-        fs::rename(temporary, destination, error);
-    }
-    if (error) {
-        fs::remove(temporary, error);
-        sendError(clientFd, 500, "Internal Server Error", "could not finalize upload");
-        return;
-    }
-
     const std::string relative = folder.empty() ? name : folder + "/" + name;
-    sendResponse(clientFd, 201, "Created", "application/json; charset=utf-8",
-        "{\"name\":\"" + jsonEscape(name) + "\",\"path\":\"" +
-        jsonEscape(relative) + "\",\"size\":" +
-        std::to_string(request.contentLength) + "}");
+    uploads_.begin(clientFd, request, directory / name, relative);
 }
 
 void FileService::handle(int clientFd, const HttpRequest &request,
-                         const std::string &webPage) const {
+                         const std::string &webPage) {
     if (request.method == "GET" && request.path == "/") {
         sendResponse(clientFd, 200, "OK", "text/html; charset=utf-8", webPage);
+    } else if (request.method == "GET" && request.path == "/upload.js") {
+        std::ifstream script("web/upload.js", std::ios::binary);
+        if (!script) { sendError(clientFd, 404, "Not Found", "upload script unavailable"); return; }
+        const std::string body((std::istreambuf_iterator<char>(script)), {});
+        sendResponse(clientFd, 200, "OK", "text/javascript; charset=utf-8", body);
     } else if (request.method == "GET" && request.path == "/api/files") {
         sendResponse(clientFd, 200, "OK", "application/json; charset=utf-8", listFiles());
     } else if (request.method == "GET" && request.path.rfind("/files/", 0) == 0) {
         download(clientFd, urlDecode(request.path.substr(7)));
-    } else if (request.method == "POST" && request.path == "/api/upload") {
-        upload(clientFd, request);
+    } else if (request.method == "POST" && request.path == "/api/uploads") {
+        beginUpload(clientFd, request);
+    } else if (request.path.rfind("/api/uploads/", 0) == 0) {
+        uploads_.handle(clientFd, request);
     } else {
         sendError(clientFd, 404, "Not Found", "route not found");
     }

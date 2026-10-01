@@ -12,7 +12,7 @@
 namespace trpshare {
 namespace {
 constexpr std::size_t MAX_HEADER_SIZE = 32 * 1024;
-constexpr std::uint64_t MAX_REQUEST_BODY = 2ULL * 1024 * 1024 * 1024;
+constexpr std::uint64_t MAX_REQUEST_BODY = 8ULL * 1024 * 1024;
 
 std::string trim(const std::string &value) {
     const auto first = value.find_first_not_of(" \t\r\n");
@@ -102,12 +102,13 @@ bool readRequest(int fd, HttpRequest &request, std::string &error) {
         if (bytes < 0 && errno == EINTR) continue;
         if (bytes <= 0) { error = "incomplete request"; return false; }
         data.append(buffer, static_cast<std::size_t>(bytes));
-        if (data.size() > MAX_HEADER_SIZE) {
+        if ((headerEnd = data.find("\r\n\r\n")) == std::string::npos && data.size() > MAX_HEADER_SIZE) {
             error = "request headers too large";
             return false;
         }
     }
 
+    if (headerEnd > MAX_HEADER_SIZE) { error = "request headers too large"; return false; }
     std::istringstream headers(data.substr(0, headerEnd));
     std::string line;
     if (!std::getline(headers, line)) { error = "bad request"; return false; }
@@ -138,14 +139,14 @@ bool readRequest(int fd, HttpRequest &request, std::string &error) {
         try {
             std::size_t used = 0;
             request.contentLength = std::stoull(length->second, &used);
-            if (used != length->second.size()) throw std::runtime_error("invalid");
+            if (length->second.empty() || length->second.find_first_not_of("0123456789") != std::string::npos || used != length->second.size()) throw std::runtime_error("invalid");
         } catch (...) {
             error = "invalid content length";
             return false;
         }
     }
     if (request.contentLength > MAX_REQUEST_BODY) {
-        error = "upload exceeds 2 GiB limit";
+        error = "request exceeds 8 MiB chunk limit";
         return false;
     }
 
